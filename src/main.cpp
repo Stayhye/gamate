@@ -240,7 +240,7 @@ int main(int argc, char **argv) {
         Run6502(&cpu);
         cpu.IPeriod = 32768 - 7364;
 
-        screen_update((uint16_t *) SCREEN, ghosting_level);
+        screen_update((uint16_t *) SCREEN);
 
         if (mfb_update(SCREEN, 60) == -1)
             exit(1);

@@ -1,255 +1,160 @@
+// http://blog.kevtris.org/blogfiles/Gamate%20Inside.txt
 #pragma GCC optimize("Ofast")
 // license:BSD-3-Clause
-// copyright-holders:David Haywood, Peter Wilhelmsen, Kevtris
-
-/*
-    Notes:
-
-    Some games are glitchy, most of these glitches are verified to happen on hardware
-    for example
-
-    Badly flipped sprites in Tornado and Insect War
-    Heavy flickering sprites in many games
-
-    Most of these issues are difficult to notice on real hardware due to the poor
-    quality display.
-
-    Thanks to Kevtris for the documentation on which this implementation is based
-    (some comments taken directly from this)
-    http://blog.kevtris.org/blogfiles/Gamate%20Inside.txt
-
-    ToDo:
-
-    Emulate vram pull / LCD refresh timings more accurately.
-    Interrupt should maybe be in here, not in drivers/gamate.cpp?
-    Verify both Window modes act the same as hardware.
-*/
-#include <cstdint>
-#include <cstring>
+#include <stdint.h>
+#include <string.h>
 #include "vdp.h"
 
-int m_vramaddress;
-int m_bitplaneselect;
-int m_scrollx;
-int m_scrolly;
-int m_window;
-int m_swapplanes;
-int m_incrementdir;
-int m_displayblank;
+// Gamate VDP internal state encapsulated in a struct
+struct GamateVDP {
+    // Registers / control
+    int vram_address; // 13-bit VRAM address
+    int active_bitplane; // 0 = plane0, 1 = plane1
+    int horizontal_scroll; // 0–255
+    int vertical_scroll; // 0–255
+    int top_window_enabled; // top 16-row window enable
+    int plane_swap_enabled; // swap plane bits for pixel output
+    int vram_increment_mode32; // VRAM increment mode: 0=+1, 1=+32
+    int display_blank; // LCD blank
 
-alignas(4) uint8_t VRAM[16384];
-
-static inline void increment_vram_address() {
-    if (m_incrementdir)
-        m_vramaddress += 0x20;
-    else
-        m_vramaddress++;
-
-    m_vramaddress &= 0x1fff;
-}
+    // 8KB VRAM (2 interleaved bitplanes, 4KB each)
+    uint8_t /*__aligned(4)*/ VRAM[16384];
+} vdp;
 
 
-static inline void lcdcon_w(uint8_t data) {
-    /*
-    NXWS ???E
-    E: When set, stops the LCD controller from refreshing the LCD.  This can
-       damage the LCD material because the invert signal is no longer toggling,
-       and the pixel/frame/row clocks/pulses are not being output.
-    S: Swap plane bits.  When set, flip bit planes 0 and 1.
-    W: D0-DF is mapped in at rows 00-0Fh at the top of the screen, with no
-       X scroll for those rows. (see window bit info below)
-    X: When clear the video address increments by 1. When set, it increments
-       by 32.
-    N: When set, clears the LCD by blanking the data.  The LCD refresh still occurs.
-    */
-    m_displayblank = (data & 0x80);
-    m_incrementdir = (data & 0x40);
-    m_window = (data & 0x20);
-    m_swapplanes = (data & 0x10);
-    // setting data & 0x01 is bad
-}
+//--- VDP port/register names ---
+typedef enum {
+    LCD_CONTROL = 1,
+    SCROLL_X = 2,
+    SCROLL_Y = 3,
+    XPOS = 4,
+    YPOS = 5,
+    VRAM_DATA = 7
+} vdp_port_t;
 
-static inline void xscroll_w(uint8_t data) {
-    /*
-    XXXX XXXX
-    X: 8 bit Xscroll value
-    */
-    m_scrollx = data;
-}
-
-static inline void yscroll_w(uint8_t data) {
-    /*
-    YYYY YYYY
-    Y: 8 bit Yscroll value
-    */
-    m_scrolly = data;
-}
-
-static inline void xpos_w(uint8_t data) {
-    /*
-    BxxX XXXX
-    B: Bitplane. 0 = lower (bitplane 0), 1 = upper (bitplane 1)
-    X: 5 lower bits of the 13 bit VRAM address.
-    */
-    m_bitplaneselect = (data & 0x80) >> 7;
-    m_vramaddress = (m_vramaddress & 0x3fe0) | (data & 0x1f);
-}
-
-static inline void ypos_w(uint8_t data) {
-    /*
-    YYYY YYYY
-    Y: 8 upper bits of 13 bit VRAM address.
-    */
-    m_vramaddress = (m_vramaddress & 0x001f) | (data << 5);;
+//--- CPU I/O ---
+__forceinline static void increment_vram_address() {
+    vdp.vram_address = (vdp.vram_address + (vdp.vram_increment_mode32 ? 0x20 : 1)) & 0x1FFF;
 }
 
 uint8_t vdp_read() {
-    uint16_t address = m_vramaddress << 1;
-
-    if (m_bitplaneselect)
-        address += 1;
-
-    uint8_t ret = VRAM[address];
-
+    const uint8_t value = vdp.VRAM[(vdp.vram_address << 1) | vdp.active_bitplane];
     increment_vram_address();
-
-    return ret;
+    return value;
 }
 
-static inline void vram_w(uint8_t data) {
-    uint16_t address = m_vramaddress << 1;
+void vdp_write(const uint16_t port, const uint8_t value) {
+    switch ((vdp_port_t) (port & 7)) {
+        case LCD_CONTROL:
+            vdp.display_blank = value & 0x80;
+            vdp.vram_increment_mode32 = value & 0x40;
+            vdp.top_window_enabled = value & 0x20;
+            vdp.plane_swap_enabled = value & 0x10;
+            break;
 
-    if (m_bitplaneselect)
-        address += 1;
+        case SCROLL_X:
+            vdp.horizontal_scroll = value;
+            break;
 
-    VRAM[address] = data;
+        case SCROLL_Y:
+            vdp.vertical_scroll = value;
+            break;
 
-    increment_vram_address();
-}
+        case XPOS:
+            vdp.active_bitplane = (value >> 7) & 1;
+            // BUGFIX: Corrected VRAM address mask from 0x3FE0 to 0x1FE0 for 13-bit address
+            vdp.vram_address = (vdp.vram_address & 0x1FE0) | (value & 0x1F);
+            break;
 
-void vdp_write(uint16_t address, uint8_t value) {
-    switch (address & 7) {
-        case 1:
-            return lcdcon_w(value);
-        case 2:
-            return xscroll_w(value);
-        case 3:
-            return yscroll_w(value);
-        case 4:
-            return xpos_w(value);
-        case 5:
-            return ypos_w(value);
-        case 7:
-            return vram_w(value);
+        case YPOS:
+            vdp.vram_address = (vdp.vram_address & 0x001F) | ((int) value << 5);
+            break;
+
+        case VRAM_DATA:
+            vdp.VRAM[(vdp.vram_address << 1) | vdp.active_bitplane] = value;
+            increment_vram_address();
+            break;
     }
 }
 
-static inline void get_real_x_and_y(int &ret_x, int &ret_y, int scanline) {
-    /* the Gamate video has 2 'Window' modes,
-       Mode 1 is enabled with an actual register
-       Mode 2 is enabled automatically based on the yscroll value
+//--- Rendering helpers ---
+__forceinline static void compute_real_coords(uint8_t *out_x, uint8_t *out_y, const uint8_t scanline) {
+    const int scroll_x = vdp.horizontal_scroll;
+    const int scroll_y = vdp.vertical_scroll;
 
-       both modes seem designed to allow for a non-scrolling status bar at
-       the top of the display.
-    */
+    if (scroll_y < 200) {
+        // BUGFIX: Use wider type and modulo to prevent overflow and correctly wrap scroll
+        const uint16_t real_y_temp = scanline + scroll_y;
+        *out_y = real_y_temp % 200;
+        *out_x = scroll_x;
 
-    if (m_scrolly < 0xc8) {
-        ret_y = scanline + m_scrolly;
-
-        if (ret_y >= 0xc8)
-            ret_y -= 0xc8;
-
-        ret_x = m_scrollx;
-
-        if (m_window) /* Mode 1 Window */
-        {
-            if (scanline < 0x10) {
-                ret_x = 0;
-                ret_y = 0xd0 + scanline;
-            }
+        if (vdp.top_window_enabled && scanline < 0x10) {
+            *out_x = 0;
+            *out_y = 0xD0 + scanline;
         }
-    } else /* Mode 2, do any games use this ? does above Window logic override this if enabled? */
-    {
-        ret_x = m_scrollx;
-
-        /*
-            Using Yscroll values of C8-CF, D8-DF, E8-EF, and F8-FF will result in the same
-            effect as if a Yscroll value of 00h were used.
-        */
-        if (m_scrolly & 0x08) // values of C8-CF, D8-DF, E8-EF, and F8-FF
-        {
-            ret_y = 0x00;
-            ret_x = m_scrollx;
+    } else {
+        *out_x = scroll_x;
+        if (scroll_y & 8) {
+            *out_y = 0;
         } else {
-            /*
-                Values D0-D7, E0-E7, and F0-F7 all produce a bit more useful effect.  The upper
-                1-8 scanlines will be pulled from rows F8-FFh in VRAM (i.e. 1F00h = row F8h).
-
-                If F0 is selected, then the upper 8 rows will be the last 8 rows in VRAM-
-                1F00-1FFFh area.  If F1 is selected, the upper 8 rows will be the last 7 rows
-                in VRAM and so on.  This special window area DOES NOT SCROLL with X making it
-                useful for status bars.  I don't think any games actually used it, though.
-            */
-            int fixedscanlines = m_scrolly & 0x7;
-
-            if (scanline <= fixedscanlines) {
-                ret_x = 0;
-                ret_y = 0xf8 + scanline + (7 - fixedscanlines);
+            const int fixed_rows = scroll_y & 7;
+            if (scanline <= fixed_rows) {
+                *out_x = 0;
+                *out_y = 0xF8 + scanline + (7 - fixed_rows);
             } else {
-                // no yscroll in this mode?
-                ret_x = m_scrollx;
-                ret_y = scanline;// +m_scrolly;
-
-                //if (ret_y >= 0xc8)
-                //  ret_y -= 0xc8;
+                *out_y = scanline;
             }
-
         }
     }
 }
 
-static inline int get_pixel_from_vram(int x, int y) {
-    x &= 0xff;
-    y &= 0xff;
 
-    int x_byte = x >> 3;
-    x &= 0x7; // x pixel;
+void screen_update(uint16_t *screen_buffer) {
+    static const uint8_t color_lut[2][2][2] = {
+        {{0, 1}, {2, 3}}, // swap = 0
+        {{0, 2}, {1, 3}}, // swap = 1
+    };
 
-    int address = ((y * 0x20) + x_byte) << 1;
-
-    int plane0 = (VRAM[address] >> (7 - x)) & 0x1;
-    int plane1 = (VRAM[address + 1] >> (7 - x)) & 0x1;
-
-    if (!m_swapplanes)
-        return plane0 | (plane1 << 1);
-    else
-        return plane1 | (plane0 << 1); // does any game use this?
-}
-
-
-
-void screen_update(uint16_t *screen, int ghosting_level) {
-    static uint8_t ghosting_buffer[160 * 160] = { 0 };
-    int real_x, real_y;
-
-    if (m_displayblank) {
-        memset(screen, 0x00, (GAMATE_SCREEN_WIDTH*GAMATE_SCREEN_HEIGHT) * sizeof(uint16_t));
+    if (vdp.display_blank) {
+        // Clear screen fast
+        memset(screen_buffer, 0, GAMATE_SCREEN_WIDTH * GAMATE_SCREEN_HEIGHT * sizeof(uint16_t));
         return;
     }
 
-    for (int scanline = 0; scanline < GAMATE_SCREEN_HEIGHT; scanline++) {
-        get_real_x_and_y(real_x, real_y, scanline);
+    for (int y = 0; y < GAMATE_SCREEN_HEIGHT; y++) {
+        uint8_t real_x, real_y;
+        compute_real_coords(&real_x, &real_y, y);
 
-        for (int x = 0; x < GAMATE_SCREEN_WIDTH; x++) {
-            int color = get_pixel_from_vram(x + real_x, real_y) << 4;
-            if (ghosting_level) {
-                int prev_color = ghosting_buffer[scanline * GAMATE_SCREEN_WIDTH + x] - (7 - ghosting_level);
+        const uint32_t base_vram_addr = real_y << 6; // (y*32)*2
 
-                if (color < prev_color) color = prev_color;
-                ghosting_buffer[scanline * GAMATE_SCREEN_WIDTH + x] = color;
+        for (int x = 0; x < GAMATE_SCREEN_WIDTH; x += 16) {
+            const uint16_t pixel_x = x + real_x;
+            const uint32_t byte_index = pixel_x >> 3;
+
+            // Load 2 bitplanes (8 pixels)
+            const uint32_t planes = *(const uint32_t *) &vdp.VRAM[base_vram_addr + (byte_index << 1)];
+            uint8_t plane_0 = planes & 0xFF;
+            uint8_t plane_1 = planes >> 8 & 0xFF;
+
+
+            // Decode 8 pixels
+#pragma GCC unroll 8
+            for (int bit = 7; bit >= 0; bit--) {
+                const uint8_t bit_0 = plane_0 >> bit & 1;
+                const uint8_t bit_1 = plane_1 >> bit & 1;
+                *screen_buffer++ = palette_gamate[color_lut[vdp.plane_swap_enabled][bit_0][bit_1]];
             }
 
-            screen[scanline * GAMATE_SCREEN_WIDTH + x] = palette_gamate[ color >> 4 ];
+            plane_0 = planes >> 16 & 0xFF;
+            plane_1 = planes >> 24;
+
+            // Decode next 8 pixels
+#pragma GCC unroll 8
+            for (int bit = 7; bit >= 0; bit--) {
+                const uint8_t bit_0 = plane_0 >> bit & 1;
+                const uint8_t bit_1 = plane_1 >> bit & 1;
+                *screen_buffer++ = palette_gamate[color_lut[vdp.plane_swap_enabled][bit_0][bit_1]];
+            }
         }
     }
 }
