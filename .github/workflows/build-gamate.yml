@@ -9,10 +9,8 @@ on:
 
 jobs:
   build:
-    name: Build with PS2SDK (Docker)
+    name: Build PS2 Binary
     runs-on: ubuntu-latest
-
-    # Use the official pre-built ps2dev container environment
     container:
       image: ps2dev/ps2dev:latest
 
@@ -20,18 +18,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure CMake for PS2
-        run: |
-          mkdir build && cd build
-          cmake -DCMAKE_TOOLCHAIN_FILE=${PS2SDK}/samples/cmake/ps2lib.cmake ..
+      - name: Build Project
+        run: make -f Makefile.ps2
 
-      - name: Compile Project
-        run: |
-          cd build
-          make
-
-      - name: Upload Build Artifact
+      - name: Upload ELF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gamate-elf
-          path: build/gamate.elf
+          path: gamate.elf
