@@ -18,6 +18,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install Make
+        run: |
+          apk update && apk add make build-base
+
       - name: Build Project
         run: make -f Makefile.ps2
 
