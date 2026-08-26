@@ -11,16 +11,12 @@ jobs:
   build:
     name: Build PS2 Binary
     runs-on: ubuntu-latest
+    container:
+      image: ps2dev/ps2dev:latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Install Host Build Essentials
-        run: sudo apt-get update && sudo apt-get install -y build-essential
-
-      - name: Setup PS2SDK Toolchain
-        uses: ps2dev/setup-ps2dev@v1
 
       - name: Build Project
         run: make -f Makefile.ps2
