@@ -18,6 +18,45 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install Build Tools Inside Container
+        run: |
+          apk update
+          apk add cmake make build-base
+
+      - name: Configure CMake for PS2
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_TOOLCHAIN_FILE=${PS2SDK}/samples/cmake/ps2lib.cmake ..
+
+      - name: Compile Project
+        run: |
+          cd build
+          make
+
+      - name: Upload ELF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamate-elf
+          path: build/gamate.elfname: Build PS2 ELF
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build PS2 Binary
+    runs-on: ubuntu-latest
+    container:
+      image: ps2dev/ps2dev:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Install Make
         run: |
           apk update && apk add make build-base
