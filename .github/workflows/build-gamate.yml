@@ -21,7 +21,7 @@ jobs:
 
       - name: Install Host Dependencies (CMake)
         run: |
-          apt-get update && apt-get install -y cmake
+          apk update && apk add cmake
 
       - name: Configure CMake for PS2
         run: |
