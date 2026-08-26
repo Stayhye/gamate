@@ -1,0 +1,24 @@
+EE_BIN = gamate.elf
+
+# Automatically grab all C, C++, and Assembly files inside src/
+EE_C_OBJS = $(notdir $(patsubst %.c,%.o,$(wildcard src/*.c)))
+EE_CXX_OBJS = $(notdir $(patsubst %.cpp,%.o,$(wildcard src/*.cpp)))
+EE_ASM_OBJS = $(notdir $(patsubst %.s,%.o,$(wildcard src/*.s))) $(notdir $(patsubst %.S,%.o,$(wildcard src/*.S)))
+
+EE_OBJS = $(EE_C_OBJS) $(EE_CXX_OBJS) $(EE_ASM_OBJS)
+
+# Search path for source files
+VPATH = src
+
+EE_LIBS = -lgraph -ldraw -lpad -laudsrv -lc -lm
+
+EE_CFLAGS = -O3 -G0 -Wall
+EE_CXXFLAGS = $(EE_CFLAGS) -std=c++20 -fno-exceptions -fno-rtti
+
+all: $(EE_BIN)
+
+clean:
+	rm -f $(EE_BIN) $(EE_OBJS)
+
+include $(PS2SDK)/samples/Makefile.pref
+include $(PS2SDK)/Makefile.eeglobal

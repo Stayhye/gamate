@@ -1,25 +1,32 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(gamate C CXX ASM)
-SET(BUILD_NAME "${PROJECT_NAME}")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-set(OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+# Check if we are cross-compiling for PS2
+if(DEFINED ENV{PS2SDK})
+    set(BUILD_NAME "gamate.elf")
+    message(STATUS "Configuring for PlayStation 2 (PS2SDK)")
+else()
+    set(BUILD_NAME "${PROJECT_NAME}")
+    set(OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+endif()
 
-# INCLUDE FILES THAT SHOULD BE COMPILED:
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
+file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c" "src/*.s" "src/*.S")
 
-message(STATUS "Add source files:")
-foreach(SRC_FILE IN LISTS SRC)
-    message(STATUS "${SRC_FILE}")
-endforeach()
-message(STATUS "")
+add_executable(${BUILD_NAME} ${SRC})
+target_include_directories(${BUILD_NAME} PRIVATE src)
 
-add_executable(${PROJECT_NAME} ${SRC})
-target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_link_libraries(${PROJECT_NAME} winmm)
+# Platform-specific dependencies
+if(DEFINED ENV{PS2SDK})
+    # PS2 Libraries (Graphics, pads, audio)
+    target_link_libraries(${BUILD_NAME} -lgraph -ldraw -lpad -laudsrv -lc -lm)
+else()
+    # Windows native
+    target_link_libraries(${BUILD_NAME} winmm)
+endif()
