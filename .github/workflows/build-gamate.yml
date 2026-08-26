@@ -16,21 +16,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Toolchain Dependencies
+      - name: Install Host Build Essentials
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential wget libgmp-dev
+          sudo apt-get install -y build-essential wget curl libgmp-dev
 
-      - name: Download and Extract PS2DEV Prebuilt Toolchain
+      - name: Download and Setup PS2DEV Toolchain
         run: |
           export PS2DEV=/opt/ps2dev
-          export PS2SDK=$PS2DEV/ps2sdk
           sudo mkdir -p $PS2DEV
           sudo chown -R $USER:$USER /opt/ps2dev
-          
-          wget https://github.com/ps2dev/ps2dev/releases/download/latest/ps2dev-ubuntu-latest.tar.gz
-          tar -xf ps2dev-ubuntu-latest.tar.gz -C /opt/ps2dev
-          
+
+          curl -o ps2dev-latest.tar.gz -LC - https://github.com/ps2dev/ps2dev/releases/download/latest/ps2dev-ubuntu-latest.tar.gz
+          tar -xf ps2dev-latest.tar.gz --strip-components 1 -C $PS2DEV
+
           echo "PS2DEV=/opt/ps2dev" >> $GITHUB_ENV
           echo "PS2SDK=/opt/ps2dev/ps2sdk" >> $GITHUB_ENV
           echo "/opt/ps2dev/bin" >> $GITHUB_PATH
