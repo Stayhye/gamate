@@ -12,13 +12,16 @@ jobs:
     name: Build with PS2SDK (Docker)
     runs-on: ubuntu-latest
 
-    # Use the official pre-built ps2dev container environment
     container:
       image: ps2dev/ps2dev:latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Install Host Dependencies (CMake)
+        run: |
+          apt-get update && apt-get install -y cmake
 
       - name: Configure CMake for PS2
         run: |
