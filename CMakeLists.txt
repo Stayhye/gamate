@@ -1,27 +1,25 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(gamate C CXX ASM)
+SET(BUILD_NAME "${PROJECT_NAME}")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-# Check if we are building for PlayStation 2 via PS2SDK
-if(DEFINED ENV{PS2SDK})
-    set(BUILD_NAME "gamate.elf")
-    message(STATUS "Configuring for PlayStation 2 (PS2SDK)")
-else()
-    set(BUILD_NAME "${PROJECT_NAME}")
-endif()
+set(OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DIR}")
 
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c" "src/*.s" "src/*.S")
+# INCLUDE FILES THAT SHOULD BE COMPILED:
+file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
 
-add_executable(${BUILD_NAME} ${SRC})
-target_include_directories(${BUILD_NAME} PRIVATE src)
+message(STATUS "Add source files:")
+foreach(SRC_FILE IN LISTS SRC)
+    message(STATUS "${SRC_FILE}")
+endforeach()
+message(STATUS "")
 
-if(DEFINED ENV{PS2SDK})
-    # PS2 system libraries required for hardware
-    target_link_libraries(${BUILD_NAME} -lgraph -ldraw -lpad -laudsrv -lc -lm)
-else()
-    # Local fallback
-    target_link_libraries(${BUILD_NAME} winmm)
-endif()
+add_executable(${PROJECT_NAME} ${SRC})
+target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_link_libraries(${PROJECT_NAME} winmm)

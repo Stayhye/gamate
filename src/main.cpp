@@ -224,8 +224,11 @@ int main(int argc, char **argv) {
     PSG_init(&psg, 4'433'000 / 4, AUDIO_FREQ);
     PSG_setVolumeMode(&psg, 2); // AY style
     PSG_set_quality(&psg, true);
-    PSG_setFlags(&psg, EMU2149_ZX_STEREO);
     PSG_reset(&psg);
+
+    psg.stereo_mask[0] = 0x01;
+    psg.stereo_mask[1] = 0x03;
+    psg.stereo_mask[2] = 0x02;
 
     memset(RAM, 0xFF, sizeof(RAM));
     Reset6502(&cpu);
@@ -240,7 +243,7 @@ int main(int argc, char **argv) {
         Run6502(&cpu);
         cpu.IPeriod = 32768 - 7364;
 
-        screen_update((uint16_t *) SCREEN);
+        screen_update((uint16_t *) SCREEN, ghosting_level);
 
         if (mfb_update(SCREEN, 60) == -1)
             exit(1);
